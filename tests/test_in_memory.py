@@ -15,6 +15,7 @@ from flametrench_audit import (
     AuditEvent,
     AuthInfo,
     InMemoryAuditStore,
+    InvalidFormatError,
     NotFoundError,
     OnBehalf,
     Outcome,
@@ -198,3 +199,153 @@ class TestGet:
         assert fetched.on_behalf is not None and fetched.on_behalf.agent_id == "agent-42"
         assert fetched.scope is not None and fetched.scope.id == org_id
         assert fetched.context is not None and fetched.context.ip == "127.0.0.1"
+
+
+class TestWriteValidation:
+    """Error taxonomy tests — ADR 0019 §Errors (locked by spec PRs #43/#46)."""
+
+    # ── outcome ──
+
+    def test_invalid_outcome_raises(self):
+        store = _store()
+        with pytest.raises(InvalidFormatError) as exc_info:
+            _write_minimal(store, outcome="not_a_valid_outcome")
+        assert exc_info.value.field == "outcome"
+
+    def test_valid_outcome_strings_accepted(self):
+        store = _store()
+        for val in ("success", "failure", "denied", "pending"):
+            event = _write_minimal(store, outcome=val)
+            assert event.outcome.value == val
+
+    # ── actor_usr_id ──
+
+    def test_actor_usr_id_wrong_prefix_raises(self):
+        store = _store()
+        with pytest.raises(InvalidFormatError) as exc_info:
+            _write_minimal(store, actor_usr_id="org_" + "a" * 32)
+        assert exc_info.value.field == "actor_usr_id"
+
+    def test_actor_usr_id_not_32hex_raises(self):
+        store = _store()
+        with pytest.raises(InvalidFormatError) as exc_info:
+            _write_minimal(store, actor_usr_id="usr_tooshort")
+        assert exc_info.value.field == "actor_usr_id"
+
+    def test_actor_usr_id_uppercase_hex_rejected(self):
+        store = _store()
+        with pytest.raises(InvalidFormatError) as exc_info:
+            _write_minimal(store, actor_usr_id="usr_" + "A" * 32)
+        assert exc_info.value.field == "actor_usr_id"
+
+    def test_actor_usr_id_null_always_valid(self):
+        store = _store()
+        event = _write_minimal(store, actor_usr_id=None)
+        assert event.actor_usr_id is None
+
+    # ── auth ──
+
+    def test_auth_unknown_kind_raises(self):
+        store = _store()
+        with pytest.raises(InvalidFormatError) as exc_info:
+            _write_minimal(store, auth=AuthInfo(kind="bearer", session_id="ses_" + "0" * 32))
+        assert exc_info.value.field == "auth"
+
+    def test_auth_missing_id_field_raises(self):
+        store = _store()
+        with pytest.raises(InvalidFormatError) as exc_info:
+            _write_minimal(store, auth=AuthInfo(kind="pat"))  # no pat_id
+        assert exc_info.value.field == "auth"
+
+    def test_auth_wrong_id_field_raises(self):
+        store = _store()
+        with pytest.raises(InvalidFormatError) as exc_info:
+            # kind=pat but session_id is set instead of pat_id
+            _write_minimal(store, auth=AuthInfo(kind="pat", session_id="ses_" + "0" * 32))
+        assert exc_info.value.field == "auth"
+
+    def test_auth_multiple_id_fields_raises(self):
+        store = _store()
+        with pytest.raises(InvalidFormatError) as exc_info:
+            _write_minimal(store, auth=AuthInfo(
+                kind="session",
+                session_id="ses_" + "0" * 32,
+                pat_id="pat_" + "0" * 32,
+            ))
+        assert exc_info.value.field == "auth"
+
+    def test_auth_session_correct_id_accepted(self):
+        store = _store()
+        event = _write_minimal(
+            store,
+            auth=AuthInfo(kind="session", session_id="ses_" + "0" * 32),
+        )
+        assert event.auth is not None and event.auth.kind == "session"
+
+    def test_auth_share_correct_id_accepted(self):
+        store = _store()
+        event = _write_minimal(
+            store,
+            auth=AuthInfo(kind="share", share_id="shr_" + "0" * 32),
+        )
+        assert event.auth is not None and event.auth.kind == "share"
+
+    # ── target.kind ──
+
+    def test_target_kind_uppercase_raises(self):
+        store = _store()
+        with pytest.raises(InvalidFormatError) as exc_info:
+            _write_minimal(store, target=Target(kind="DOC", id="x"))
+        assert exc_info.value.field == "target.kind"
+
+    def test_target_kind_too_short_raises(self):
+        store = _store()
+        with pytest.raises(InvalidFormatError) as exc_info:
+            _write_minimal(store, target=Target(kind="x", id="x"))
+        assert exc_info.value.field == "target.kind"
+
+    def test_target_kind_too_long_raises(self):
+        store = _store()
+        with pytest.raises(InvalidFormatError) as exc_info:
+            _write_minimal(store, target=Target(kind="toolong7", id="x"))
+        assert exc_info.value.field == "target.kind"
+
+    def test_target_kind_adopter_type_accepted(self):
+        store = _store()
+        for kind in ("doc", "proj", "usr", "org", "fil"):
+            event = _write_minimal(store, target=Target(kind=kind, id="opaque-id"))
+            assert event.target.kind == kind
+
+    # ── size ──
+
+    def test_oversized_metadata_raises(self):
+        store = _store()
+        with pytest.raises(InvalidFormatError) as exc_info:
+            _write_minimal(store, metadata={"x": "a" * (65 * 1024)})
+        assert exc_info.value.field == "size"
+
+    # ── opacity — these MUST NOT raise ──
+
+    def test_opaque_action_not_validated(self):
+        store = _store()
+        event = _write_minimal(store, action="ANYTHING goes here!! 🚀 {}")
+        assert event.action == "ANYTHING goes here!! 🚀 {}"
+
+    def test_opaque_on_behalf_agent_id_not_validated(self):
+        store = _store()
+        event = _write_minimal(store, on_behalf=OnBehalf(agent_id="NOT/valid?format"))
+        assert event.on_behalf is not None
+
+    def test_opaque_system_id_not_validated(self):
+        store = _store()
+        event = _write_minimal(
+            store,
+            actor_usr_id=None,
+            auth=AuthInfo(kind="system", system_id="ANY::opaque::string"),
+        )
+        assert event.auth is not None and event.auth.system_id == "ANY::opaque::string"
+
+    def test_opaque_adopter_target_id_not_validated(self):
+        store = _store()
+        event = _write_minimal(store, target=Target(kind="proj", id="legacy-project-42"))
+        assert event.target.id == "legacy-project-42"

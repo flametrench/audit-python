@@ -10,7 +10,7 @@ Every AuditEvent is immutable once written. The store exposes no update or
 delete operations; implementations MUST be durable before returning from write.
 """
 
-from .errors import AuditError, NotFoundError
+from .errors import AuditError, InvalidFormatError, NotFoundError, PreconditionError
 from .in_memory import InMemoryAuditStore
 from .store import AuditStore
 from .types import (
@@ -30,9 +30,11 @@ __all__ = [
     "AuditStore",
     "AuthInfo",
     "InMemoryAuditStore",
+    "InvalidFormatError",
     "NotFoundError",
     "OnBehalf",
     "Outcome",
+    "PreconditionError",
     "Scope",
     "Target",
 ]
