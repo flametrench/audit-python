@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flametrench-audit"
+version = "0.4.0"
+description = "Audit primitives for Flametrench: append-only, identity- and tenancy-aware event logging (ADR 0019)."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+authors = [
+    { name = "NDC Digital, LLC" },
+]
+keywords = ["flametrench", "audit", "audit-log", "events", "append-only"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "flametrench-ids>=0.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "psycopg[binary]>=3.1",
+]
+postgres = [
+    "psycopg[binary]>=3.1",
+]
+
+[project.urls]
+Homepage = "https://flametrench.dev"
+Repository = "https://github.com/flametrench/audit-python"
+Specification = "https://github.com/flametrench/spec"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
