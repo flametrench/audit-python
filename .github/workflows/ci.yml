@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12', '3.13']
+
+    name: Python ${{ matrix.python }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout flametrench/ids-python
+        # Bootstrap ids>=0.4.0 from source until the tag is on PyPI.
+        # Update to ref: v0.4.0 once published.
+        uses: actions/checkout@v4
+        with:
+          repository: flametrench/ids-python
+          ref: feat/v04-prefixes
+          path: _vendored/ids-python
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: 'pip'
+
+      - name: Install ids dep from sibling checkout
+        run: pip install ./_vendored/ids-python
+
+      - name: Install package
+        run: pip install -e '.[dev]'
+
+      - name: Run tests
+        run: pytest -q
